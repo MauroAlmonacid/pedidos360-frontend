@@ -73,6 +73,17 @@
       <div class="navbar-user">
         <span class="status-badge"><span class="status-dot" aria-hidden="true"></span>En línea</span>
 
+        <button
+          type="button"
+          class="navbar-cart"
+          (click)="alternarCarrito()"
+          aria-label="Abrir carrito de compras"
+        >
+          <span class="navbar-cart__icon" aria-hidden="true">&#128722;</span>
+          <span class="navbar-cart__badge">{{ obtenerTotalUnidades() }}</span>
+          <span class="navbar-cart__subtotal">${{ obtenerTotalCarrito() }}</span>
+        </button>
+
         <div class="user-chip">
           <div class="user-meta">
             <strong>{{ usuarioActivo }}</strong>
@@ -193,6 +204,7 @@
                 class="cart-button"
                 [class.cart-button--disabled]="prod.stock === 0"
                 [disabled]="prod.stock === 0"
+                (click)="agregarAlCarrito(prod)"
               >
                 <span aria-hidden="true">&#128722;</span>
                 {{ prod.stock === 0 ? 'Agotado' : 'Agregar al Carrito' }}
@@ -202,5 +214,95 @@
         </section>
       }
     </main>
+
+    <!-- ===== Panel lateral deslizante del carrito (Drawer) ===== -->
+    <div
+      class="drawer-overlay"
+      [class.drawer-overlay--visible]="mostrarCarrito"
+      (click)="cerrarPanelCarrito()"
+      aria-hidden="true"
+    ></div>
+
+    <aside
+      class="cart-drawer"
+      [class.drawer-open]="mostrarCarrito"
+      [class.drawer-closed]="!mostrarCarrito"
+      aria-label="Carrito de compras"
+      [attr.aria-hidden]="!mostrarCarrito"
+    >
+      <header class="cart-drawer__header">
+        <div class="cart-drawer__title">
+          <span class="cart-drawer__title-icon" aria-hidden="true">&#128722;</span>
+          <h2>Tu Carrito de Compras</h2>
+          <span class="cart-drawer__count">
+            {{ obtenerTotalUnidades() }}
+            <ng-container [ngPlural]="obtenerTotalUnidades()">
+              <ng-template ngPluralCase="=1">artículo</ng-template>
+              <ng-template ngPluralCase="other">artículos</ng-template>
+            </ng-container>
+          </span>
+        </div>
+        <button
+          type="button"
+          class="cart-drawer__close"
+          (click)="cerrarPanelCarrito()"
+          aria-label="Cerrar carrito"
+        >
+          &#10005;
+        </button>
+      </header>
+
+      <div class="cart-drawer__body">
+        @if (itemsCarrito.length === 0) {
+          <div class="cart-empty">
+            <div class="cart-empty__art" aria-hidden="true">&#128717;</div>
+            <h3>Tu carrito está vacío</h3>
+            <p>¡Explora el catálogo y agrega productos!</p>
+          </div>
+        } @else {
+          <ul class="cart-items">
+            @for (item of itemsCarrito; track item.id) {
+              <li class="cart-item">
+                <div class="cart-item__info">
+                  <h4>{{ item.nombre }}</h4>
+                  <span class="cart-item__qty">
+                    Cantidad: <strong>{{ item.cantidad }}</strong>
+                  </span>
+                  <span class="cart-item__unit">${{ item.precio }} / unidad</span>
+                </div>
+                <div class="cart-item__subtotal">${{ item.precio * item.cantidad }}</div>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+
+      <footer class="cart-drawer__footer">
+        @if (mensajeCarrito) {
+          <div class="cart-feedback" role="status">{{ mensajeCarrito }}</div>
+        }
+        <div class="cart-total">
+          <span>Total a Pagar</span>
+          <strong>${{ obtenerTotalCarrito() }}</strong>
+        </div>
+        <div class="cart-actions">
+          <button
+            type="button"
+            class="cart-action cart-action--secondary"
+            (click)="vaciarTodoElCarrito()"
+            [disabled]="itemsCarrito.length === 0"
+          >
+            &#128465; Vaciar Carrito
+          </button>
+          <button
+            type="button"
+            class="cart-action cart-action--primary"
+            (click)="vaciarTodoElCarrito()"
+          >
+            &#10004; Finalizar Pedido
+          </button>
+        </div>
+      </footer>
+    </aside>
   </section>
 }

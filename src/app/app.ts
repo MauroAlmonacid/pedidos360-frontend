@@ -1,10 +1,12 @@
-// Importamos ChangeDetectorRef y NgZone para avisarle a la pantalla que se actualice
 import { Component, OnInit, ChangeDetectorRef, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MsalService } from '@azure/msal-angular';
 import { AuthenticationResult } from '@azure/msal-browser';
 import { Producto } from './models/producto';
 import { ProductoService } from './services/producto.service';
+// 1. Importamos el modelo y el nuevo servicio de carrito
+import { Pedido } from './models/pedido';
+import { CarritoService } from './services/carrito.service';
 
 @Component({
   selector: 'app-root',
@@ -24,41 +26,46 @@ export class App implements OnInit {
   cargandoProductos: boolean = false;
   errorProductos: string | null = null;
 
+  // 2. Lista reactiva para almacenar los ítems del carrito
+  itemsCarrito: Pedido[] = [];
+  mensajeCarrito: string | null = null;
+
+  // 3. Controla la visibilidad del panel lateral deslizante (drawer)
+  mostrarCarrito: boolean = false;
+
   constructor(
     private authService: MsalService,
     private productoService: ProductoService,
-    // Los dos motores que obligan a la pantalla a redibujarse sin esperar clics:
+    // 4. Inyectamos el servicio del carrito
+    private carritoService: CarritoService,
     private cdr: ChangeDetectorRef,
     private zone: NgZone
   ) {}
 
   async ngOnInit(): Promise<void> {
     try {
-      // 1. Inicializamos MSAL
       await this.authService.instance.initialize();
+      const respuesta = await this.authService.instance.handleRedirectPromise();
 
-      // 2. Procesamos el código de regreso de Microsoft
-      const respuesta: AuthenticationResult | null = await this.authService.instance.handleRedirectPromise();
-
-      // Ejecutamos la asignación dentro de NgZone para que Angular despierte de inmediato
       this.zone.run(() => {
         if (respuesta) {
           this.authService.instance.setActiveAccount(respuesta.account);
           this.usuarioActivo = respuesta.account?.name || respuesta.account?.username || 'Usuario';
           this.correoUsuario = respuesta.account?.username || null;
           this.cargarCatalogo();
-          this.cdr.detectChanges(); // Forzamos el render inmediato
+          this.cargarCarrito(); // Trae el carrito si había datos previos
+          this.cdr.detectChanges();
           return;
         }
 
-        // Si la página se recargó, verificamos las cuentas activas en memoria
         const cuentas = this.authService.instance.getAllAccounts();
         if (cuentas.length > 0) {
           this.authService.instance.setActiveAccount(cuentas[0]);
           this.usuarioActivo = cuentas[0].name || cuentas[0].username;
           this.correoUsuario = cuentas[0].username || null;
           this.cargarCatalogo();
-          this.cdr.detectChanges(); // Forzamos el render inmediato
+          this.cargarCarrito();
+          this.cdr.detectChanges();
         }
       });
     } catch (error) {
@@ -67,31 +74,21 @@ export class App implements OnInit {
   }
 
   iniciarSesion(): void {
-    // Escudo de seguridad: si el usuario ya está conectado, no volvemos a redirigir
-    if (this.usuarioActivo) {
-      return;
-    }
-
+    if (this.usuarioActivo) return;
     this.cargando = true;
     this.errorLogin = null;
-
-    this.authService.loginRedirect({
-      scopes: ['user.read']
-    });
+    this.authService.loginRedirect({ scopes: ['user.read'] });
   }
 
   cargarCatalogo(): void {
     this.cargandoProductos = true;
-    this.errorProductos = null;
-
     this.productoService.obtenerProductos().subscribe({
       next: (datos) => {
         this.zone.run(() => {
           this.productos = datos;
           this.cargandoProductos = false;
-          this.cdr.detectChanges(); // Pinta las tarjetas de productos en el acto
+          this.cdr.detectChanges();
         });
-        console.log('Catálogo cargado con éxito:', datos);
       },
       error: (err) => {
         this.zone.run(() => {
@@ -99,9 +96,88 @@ export class App implements OnInit {
           this.errorProductos = 'No se pudo conectar con el microservicio en el puerto 8080.';
           this.cdr.detectChanges();
         });
-        console.error('[Error Catálogo]:', err);
       }
     });
+  }
+
+  // 4. Consulta los pedidos guardados en el puerto 8082
+  cargarCarrito(): void {
+    this.carritoService.obtenerCarrito().subscribe({
+      next: (pedidos) => {
+        this.zone.run(() => {
+          this.itemsCarrito = pedidos;
+          this.cdr.detectChanges();
+        });
+      },
+      error: (err) => console.error('[Error al cargar carrito]:', err)
+    });
+  }
+
+  // 5. Envía un nuevo pedido por HTTP POST a Spring Boot
+  agregarAlCarrito(prod: Producto): void {
+    const nuevoPedido: Pedido = {
+      nombre: prod.nombre,
+      precio: prod.precio,
+      cantidad: 1
+    };
+
+    this.carritoService.agregarAlCarrito(nuevoPedido).subscribe({
+      next: (pedidoCreado) => {
+        this.zone.run(() => {
+          this.itemsCarrito.push(pedidoCreado);
+          this.mensajeCarrito = `¡${prod.nombre} agregado al carrito!`;
+          // Muestra el panel lateral para dar retroalimentación visual al usuario
+          this.mostrarCarrito = true;
+          this.cdr.detectChanges();
+
+          // Borra el mensaje de confirmación después de 3 segundos
+          setTimeout(() => {
+            this.mensajeCarrito = null;
+            this.cdr.detectChanges();
+          }, 3000);
+        });
+      },
+      error: (err) => console.error('[Error al agregar pedido]:', err)
+    });
+  }
+
+  // 7. Abre o cierra el panel lateral deslizante del carrito
+  alternarCarrito(): void {
+    this.mostrarCarrito = !this.mostrarCarrito;
+  }
+
+  // 8. Cierra el panel lateral del carrito (al hacer clic en el fondo)
+  cerrarPanelCarrito(): void {
+    this.mostrarCarrito = false;
+  }
+
+  // 9. Vacía por completo el carrito tanto en el backend como en la vista
+  vaciarTodoElCarrito(): void {
+    this.carritoService.vaciarCarrito().subscribe({
+      next: () => {
+        this.zone.run(() => {
+          this.itemsCarrito = [];
+          this.mensajeCarrito = 'Carrito vaciado';
+          this.cdr.detectChanges();
+
+          setTimeout(() => {
+            this.mensajeCarrito = null;
+            this.cdr.detectChanges();
+          }, 3000);
+        });
+      },
+      error: (err) => console.error('[Error al vaciar carrito]:', err)
+    });
+  }
+
+  // 10. Calcula el total de unidades sumando las cantidades del carrito
+  obtenerTotalUnidades(): number {
+    return this.itemsCarrito.reduce((acumulado, item) => acumulado + item.cantidad, 0);
+  }
+
+  // 6. Calcula el costo total sumando los precios del carrito
+  obtenerTotalCarrito(): number {
+    return this.itemsCarrito.reduce((acumulado, item) => acumulado + (item.precio * item.cantidad), 0);
   }
 
   cerrarSesion(): void {
