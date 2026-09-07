@@ -5,8 +5,8 @@ export const msalConfig: Configuration = {
   auth: {
     clientId: 'b723576c-f14c-46b7-a4d6-bb1750acbed5',
     authority: 'https://login.microsoftonline.com/e5372bf0-c5e3-4286-887c-79069f209c1f',
-    redirectUri: 'http://localhost:4200',
-    postLogoutRedirectUri: 'http://localhost:4200'
+    redirectUri: window.location.origin,
+    postLogoutRedirectUri: window.location.origin
   },
   cache: {
     cacheLocation: 'localStorage' // Mantiene la sesión viva al recargar la página
