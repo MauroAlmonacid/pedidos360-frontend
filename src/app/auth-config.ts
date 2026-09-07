@@ -28,14 +28,12 @@ export const msalConfig: Configuration = {
 export function MSALInterceptorConfigFactory(): MsalInterceptorConfiguration {
   const protectedResourceMap = new Map<string, Array<string>>();
 
-  // 1. Mapeo exacto para el microservicio de Productos (puerto 8080)
-  protectedResourceMap.set('http://localhost:8080/productos', ['User.Read']);
-  protectedResourceMap.set('http://localhost:8080', ['User.Read']);
+  // Ámbito propio registrado en Azure:
+  const apiScope = 'api://b723576c-f14c-46b7-a4d6-bb1750acbed5/access_as_user';
 
-  // 2. Mapeo exacto para el microservicio de Carrito (puerto 8082)
-  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/productos', ['User.Read']);
-  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/carrito', ['User.Read']);
-  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/*', ['User.Read']);
+  // Interceptores para AWS API Gateway
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/*', [apiScope]);
+
   return {
     interactionType: InteractionType.Redirect,
     protectedResourceMap

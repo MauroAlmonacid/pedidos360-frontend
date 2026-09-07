@@ -87,7 +87,9 @@ export class App implements OnInit {
     this.cargando = true;
     this.errorLogin = null;
     // Usamos User.Read con mayúsculas estándar de Microsoft Graph
-    this.authService.loginRedirect({ scopes: ['User.Read'] });
+    this.authService.loginRedirect({ 
+      scopes: ['api://b723576c-f14c-46b7-a4d6-bb1750acbed5/access_as_user'] 
+    });
   }
   cargarCatalogo(): void {
     this.cargandoProductos = true;
