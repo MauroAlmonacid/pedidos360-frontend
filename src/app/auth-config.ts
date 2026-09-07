@@ -1,34 +1,31 @@
-import { Configuration, LogLevel } from '@azure/msal-browser';
+import { LogLevel, Configuration } from '@azure/msal-browser';
 
-// Configuración central para el cliente de Microsoft Entra ID
+// Configuración oficial de MSAL para Angular moderno (v3)
 export const msalConfig: Configuration = {
   auth: {
-    // Identificador único de tu aplicación registrada en Azure
+    // ID de la aplicación registrada en el portal de Azure Entra ID
     clientId: 'b723576c-f14c-46b7-a4d6-bb1750acbed5',
-    // URL de la autoridad que valida identidades en tu Tenant
+    // Tenant institucional para autenticar las cuentas Duoc / Microsoft
     authority: 'https://login.microsoftonline.com/e5372bf0-c5e3-4286-887c-79069f209c1f',
-    // Dirección local a la que Azure devuelve al usuario autenticado
+    // URL local a la que Microsoft devolverá al usuario
     redirectUri: 'http://localhost:4200',
-    // Dirección a la que se envía al usuario al cerrar sesión
     postLogoutRedirectUri: 'http://localhost:4200'
   },
   cache: {
-    // 'localStorage' almacena las credenciales de forma persistente en el navegador
+    // En MSAL v3 se define directamente como 'localStorage' para persistir la sesión
     cacheLocation: 'localStorage'
+    // Nota: ya no se incluye storeAuthStateInCookie porque fue removido en v3
   },
   system: {
     loggerOptions: {
-      // Función para imprimir eventos en la consola del navegador
+      // Filtro para depurar eventos en consola sin exponer datos privados
       loggerCallback: (level, message, containsPii) => {
-        if (!containsPii && level === LogLevel.Error) {
-          console.error('[MSAL Error]:', message);
-        }
+        if (containsPii) return;
       },
       logLevel: LogLevel.Warning
     }
   }
 };
-
 // Rutas protegidas y permisos que solicitará el frontend
 export const protectedResources = {
   productosApi: {

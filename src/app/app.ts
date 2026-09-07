@@ -1,15 +1,15 @@
-import { Component, OnInit } from '@angular/core';
+// Importamos ChangeDetectorRef y NgZone para avisarle a la pantalla que se actualice
+import { Component, OnInit, ChangeDetectorRef, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MsalService } from '@azure/msal-angular';
 import { AuthenticationResult } from '@azure/msal-browser';
-// 1. Importamos el modelo y el servicio que creamos
 import { Producto } from './models/producto';
 import { ProductoService } from './services/producto.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule], // CommonModule permite usar directivas como *ngFor y *ngIf
+  imports: [CommonModule],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -24,74 +24,87 @@ export class App implements OnInit {
   cargandoProductos: boolean = false;
   errorProductos: string | null = null;
 
-  // 3. Inyectamos ProductoService en el constructor junto al servicio de MSAL
   constructor(
     private authService: MsalService,
-    private productoService: ProductoService
+    private productoService: ProductoService,
+    // Los dos motores que obligan a la pantalla a redibujarse sin esperar clics:
+    private cdr: ChangeDetectorRef,
+    private zone: NgZone
   ) {}
 
   async ngOnInit(): Promise<void> {
     try {
+      // 1. Inicializamos MSAL
       await this.authService.instance.initialize();
-      const cuentas = this.authService.instance.getAllAccounts();
-      if (cuentas.length > 0) {
-        this.usuarioActivo = cuentas[0].name || cuentas[0].username;
-        this.correoUsuario = cuentas[0].username || null;
-        // Si ya había sesión activa previa, cargamos el catálogo de inmediato
-        this.cargarCatalogo();
-      }
+
+      // 2. Procesamos el código de regreso de Microsoft
+      const respuesta: AuthenticationResult | null = await this.authService.instance.handleRedirectPromise();
+
+      // Ejecutamos la asignación dentro de NgZone para que Angular despierte de inmediato
+      this.zone.run(() => {
+        if (respuesta) {
+          this.authService.instance.setActiveAccount(respuesta.account);
+          this.usuarioActivo = respuesta.account?.name || respuesta.account?.username || 'Usuario';
+          this.correoUsuario = respuesta.account?.username || null;
+          this.cargarCatalogo();
+          this.cdr.detectChanges(); // Forzamos el render inmediato
+          return;
+        }
+
+        // Si la página se recargó, verificamos las cuentas activas en memoria
+        const cuentas = this.authService.instance.getAllAccounts();
+        if (cuentas.length > 0) {
+          this.authService.instance.setActiveAccount(cuentas[0]);
+          this.usuarioActivo = cuentas[0].name || cuentas[0].username;
+          this.correoUsuario = cuentas[0].username || null;
+          this.cargarCatalogo();
+          this.cdr.detectChanges(); // Forzamos el render inmediato
+        }
+      });
     } catch (error) {
-      console.warn('[MSAL Advertencia]:', error);
+      console.error('[Error de Autenticación]:', error);
     }
   }
 
   iniciarSesion(): void {
+    // Escudo de seguridad: si el usuario ya está conectado, no volvemos a redirigir
+    if (this.usuarioActivo) {
+      return;
+    }
+
     this.cargando = true;
     this.errorLogin = null;
 
-    this.authService.loginPopup()
-      .subscribe({
-        next: (resultado: AuthenticationResult) => {
-          this.usuarioActivo = resultado.account?.name || resultado.account?.username || 'Usuario';
-          this.correoUsuario = resultado.account?.username || null;
-          this.cargando = false;
-          // Tras iniciar sesión exitosamente, traemos los productos de la base de datos
-          this.cargarCatalogo();
-        },
-        error: (error) => {
-          this.cargando = false;
-          this.errorLogin = 'No se pudo completar el inicio de sesión con Microsoft.';
-          console.error('[Error Login]:', error);
-        }
-      });
+    this.authService.loginRedirect({
+      scopes: ['user.read']
+    });
   }
 
-  // 4. Método que llama a Spring Boot por HTTP GET y rellena el arreglo de productos
   cargarCatalogo(): void {
     this.cargandoProductos = true;
     this.errorProductos = null;
+
     this.productoService.obtenerProductos().subscribe({
       next: (datos) => {
-        this.productos = datos;
-        this.cargandoProductos = false;
-        console.log('Productos cargados con éxito desde Spring Boot:', datos);
+        this.zone.run(() => {
+          this.productos = datos;
+          this.cargandoProductos = false;
+          this.cdr.detectChanges(); // Pinta las tarjetas de productos en el acto
+        });
+        console.log('Catálogo cargado con éxito:', datos);
       },
       error: (err) => {
-        this.cargandoProductos = false;
-        this.errorProductos = 'No se pudo conectar con el microservicio de productos en el puerto 8080. Verifica que el servidor de Spring Boot esté en ejecución e intenta nuevamente.';
-        console.error('Error al consultar microservicio de productos:', err);
+        this.zone.run(() => {
+          this.cargandoProductos = false;
+          this.errorProductos = 'No se pudo conectar con el microservicio en el puerto 8080.';
+          this.cdr.detectChanges();
+        });
+        console.error('[Error Catálogo]:', err);
       }
     });
   }
 
   cerrarSesion(): void {
-    this.authService.logoutPopup()
-      .subscribe({
-        next: () => {
-          this.usuarioActivo = null;
-          this.correoUsuario = null;
-          this.productos = []; // Vaciamos los productos en pantalla al salir
-        }
-      });
+    this.authService.logoutRedirect();
   }
 }
