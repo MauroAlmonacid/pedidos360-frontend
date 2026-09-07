@@ -44,25 +44,34 @@ export class App implements OnInit {
 
   async ngOnInit(): Promise<void> {
     try {
+      // 1. PRIMER PASO VITAL: Girar la llave y encender el motor de MSAL
       await this.authService.instance.initialize();
+
+      // 2. SEGUNDO PASO: Ya con el motor encendido, procesamos el retorno de Microsoft
       const respuesta = await this.authService.instance.handleRedirectPromise();
 
       this.zone.run(() => {
-        if (respuesta) {
-          this.authService.instance.setActiveAccount(respuesta.account);
-          this.usuarioActivo = respuesta.account?.name || respuesta.account?.username || 'Usuario';
-          this.correoUsuario = respuesta.account?.username || null;
-          this.cargarCatalogo();
-          this.cargarCarrito(); // Trae el carrito si había datos previos
-          this.cdr.detectChanges();
-          return;
+        let cuentaParaActivar = null;
+
+        // Verificamos si volvemos de un login recién completado
+        if (respuesta && respuesta.account) {
+          cuentaParaActivar = respuesta.account;
+        } else {
+          // Si la página se recargó y ya había una sesión guardada en localStorage
+          const cuentas = this.authService.instance.getAllAccounts();
+          if (cuentas.length > 0) {
+            cuentaParaActivar = cuentas[0];
+          }
         }
 
-        const cuentas = this.authService.instance.getAllAccounts();
-        if (cuentas.length > 0) {
-          this.authService.instance.setActiveAccount(cuentas[0]);
-          this.usuarioActivo = cuentas[0].name || cuentas[0].username;
-          this.correoUsuario = cuentas[0].username || null;
+        // Declaramos la cuenta activa para que el interceptor sepa a quién timbrar los tokens
+        if (cuentaParaActivar) {
+          this.authService.instance.setActiveAccount(cuentaParaActivar);
+          this.usuarioActivo = cuentaParaActivar.name || cuentaParaActivar.username;
+          this.correoUsuario = cuentaParaActivar.username || null;
+          console.log('>>> Cuenta activa registrada en MSAL:', cuentaParaActivar.username);
+
+          // Ahora que la identidad está firme, cargamos los datos protegidos
           this.cargarCatalogo();
           this.cargarCarrito();
           this.cdr.detectChanges();
@@ -74,12 +83,15 @@ export class App implements OnInit {
   }
 
   iniciarSesion(): void {
-    if (this.usuarioActivo) return;
-    this.cargando = true;
-    this.errorLogin = null;
-    this.authService.loginRedirect({ scopes: ['user.read'] });
+  if (this.usuarioActivo) {
+    return;
   }
-
+  this.cargando = true;
+  this.errorLogin = null;
+  this.authService.loginRedirect({
+    scopes: ['user.read']
+  });
+}
   cargarCatalogo(): void {
     this.cargandoProductos = true;
     this.productoService.obtenerProductos().subscribe({
