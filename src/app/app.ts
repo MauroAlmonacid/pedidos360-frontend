@@ -83,15 +83,12 @@ export class App implements OnInit {
   }
 
   iniciarSesion(): void {
-  if (this.usuarioActivo) {
-    return;
+    if (this.usuarioActivo) return;
+    this.cargando = true;
+    this.errorLogin = null;
+    // Usamos User.Read con mayúsculas estándar de Microsoft Graph
+    this.authService.loginRedirect({ scopes: ['User.Read'] });
   }
-  this.cargando = true;
-  this.errorLogin = null;
-  this.authService.loginRedirect({
-    scopes: ['user.read']
-  });
-}
   cargarCatalogo(): void {
     this.cargandoProductos = true;
     this.productoService.obtenerProductos().subscribe({

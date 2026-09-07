@@ -9,26 +9,33 @@ export const msalConfig: Configuration = {
     postLogoutRedirectUri: 'http://localhost:4200'
   },
   cache: {
-    cacheLocation: 'localStorage' // Mantiene el token activo en el navegador
+    cacheLocation: 'localStorage' // Mantiene la sesión viva al recargar la página
   },
   system: {
     loggerOptions: {
+      // Activamos los mensajes de diagnóstico de MSAL en la consola F12
       loggerCallback: (level, message, containsPii) => {
         if (containsPii) return;
+        if (level === LogLevel.Error || level === LogLevel.Warning || level === LogLevel.Info) {
+          console.log('[MSAL]:', message);
+        }
       },
-      logLevel: LogLevel.Warning
+      logLevel: LogLevel.Info
     }
   }
 };
 
-// Fábrica que mapea qué URLs recibirán automáticamente el token Bearer
 export function MSALInterceptorConfigFactory(): MsalInterceptorConfiguration {
   const protectedResourceMap = new Map<string, Array<string>>();
 
-  // Cualquier petición dirigida a estos puertos llevará el token adjunto
-  protectedResourceMap.set('http://localhost:8080/', ['User.Read']);
-  protectedResourceMap.set('http://localhost:8082/', ['User.Read']);
+  // 1. Mapeo exacto para el microservicio de Productos (puerto 8080)
+  protectedResourceMap.set('http://localhost:8080/productos', ['User.Read']);
+  protectedResourceMap.set('http://localhost:8080', ['User.Read']);
 
+  // 2. Mapeo exacto para el microservicio de Carrito (puerto 8082)
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/productos', ['User.Read']);
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/carrito', ['User.Read']);
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/*', ['User.Read']);
   return {
     interactionType: InteractionType.Redirect,
     protectedResourceMap

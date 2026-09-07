@@ -8,7 +8,7 @@ import { Pedido } from '../models/pedido';
 })
 export class CarritoService {
   // URL directa al microservicio de carrito en el puerto 8082
-  private apiUrl = 'http://localhost:8082/carrito'; 
+  private apiUrl = 'https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/carrito'; 
 
   // Inyectamos HttpClient para comunicarnos por la red
   constructor(private http: HttpClient) {}

@@ -8,7 +8,7 @@ import { Producto } from '../models/producto';
 })
 export class ProductoService {
   // URL del endpoint expuesto por nuestro backend en Spring Boot
-  private apiUrl = 'http://localhost:8080/productos';
+  private apiUrl = 'https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/productos';
 
   constructor(private http: HttpClient) {}
 
