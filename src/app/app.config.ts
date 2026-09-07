@@ -6,7 +6,7 @@ import { IPublicClientApplication, PublicClientApplication } from '@azure/msal-b
 import { MsalService, MSAL_INSTANCE } from '@azure/msal-angular';
 import { msalConfig } from './auth-config';
 
-// Función fábrica que inicializa el cliente de Microsoft con tus IDs de Azure
+// Instancia única del cliente de Azure
 export function MSALInstanceFactory(): IPublicClientApplication {
   return new PublicClientApplication(msalConfig);
 }
@@ -15,12 +15,11 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
-    // Habilita el cliente HTTP para conectar luego con los microservicios
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: MSAL_INSTANCE,
-      useFactory: MSALInstanceFactory // Inyecta el motor de MSAL en toda la app
+      useFactory: MSALInstanceFactory // Proveedor de la librería de autenticación
     },
-    MsalService // Servicio que gestiona el login, logout y lectura de usuarios
+    MsalService // Servicio que inyectaremos en app.ts
   ]
 };
