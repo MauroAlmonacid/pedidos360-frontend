@@ -1,15 +1,17 @@
-/* To learn more about Typescript configuration file: https://www.typescriptlang.org/docs/handbook/tsconfig-json.html. */
-/* To learn more about Angular compiler options: https://angular.dev/reference/configs/angular-compiler-options. */
+/* Configuración de TypeScript para la ejecución de pruebas unitarias */
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/spec",
+    // Le define a TypeScript la carpeta exacta de origen para que no intente adivinarla
+    "rootDir": "./src/app",
+    // Tipos requeridos exclusivamente para el framework de pruebas
     "types": [
-      "vitest/globals"
+      "jasmine"
     ]
   },
   "include": [
-    "src/**/*.d.ts",
-    "src/**/*.spec.ts"
+    // Apunta directamente a los archivos de prueba que viven dentro de app
+    "src/app/**/*.spec.ts",
+    "src/app/**/*.d.ts"
   ]
-}
+}git
