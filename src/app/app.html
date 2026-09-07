@@ -120,5 +120,87 @@
         </div>
       </section>
     </main>
+
+    <!-- ===== Catálogo de productos ===== -->
+    <main class="catalog-main">
+      <header class="catalog-header">
+        <div>
+          <span class="card-kicker">Inventario en vivo</span>
+          <h2>Catálogo de Productos</h2>
+          <p class="catalog-subtitle">
+            Consulta la disponibilidad y precios de los productos disponibles en el almacén.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="refresh-button"
+          (click)="cargarCatalogo()"
+          [disabled]="cargandoProductos"
+        >
+          <span class="refresh-icon" [class.spinning]="cargandoProductos" aria-hidden="true">&#8635;</span>
+          {{ cargandoProductos ? 'Actualizando…' : 'Actualizar' }}
+        </button>
+      </header>
+
+      @if (cargandoProductos && !errorProductos) {
+        <section class="catalog-loading" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Cargando inventario…</p>
+        </section>
+      } @else if (errorProductos) {
+        <section class="catalog-error" role="alert">
+          <span class="catalog-error__icon" aria-hidden="true">!</span>
+          <div class="catalog-error__body">
+            <strong>No se pudo cargar el catálogo</strong>
+            <p>{{ errorProductos }}</p>
+          </div>
+          <button type="button" class="retry-button" (click)="cargarCatalogo()">
+            Reintentar
+          </button>
+        </section>
+      } @else if (productos.length === 0) {
+        <section class="catalog-empty" aria-live="polite">
+          <div class="empty-emoji" aria-hidden="true">&#129321;</div>
+          <h3>Sin productos disponibles</h3>
+          <p>El catálogo está vacío por el momento. Vuelve más tarde para explorar nuevos artículos.</p>
+        </section>
+      } @else {
+        <section class="product-grid" aria-label="Lista de productos">
+          @for (prod of productos; track prod.id) {
+            <article class="product-card" attr.aria-label="Producto {{ prod.nombre }}">
+              <div class="product-card__top">
+                <span class="badge">#{{ prod.id }}</span>
+                <span
+                  class="stock-label"
+                  [class.stock-out]="prod.stock === 0"
+                >
+                  @if (prod.stock > 0) {
+                    <span class="stock-dot" aria-hidden="true"></span>
+                    {{ prod.stock }} disponibles
+                  } @else {
+                    Sin stock
+                  }
+                </span>
+              </div>
+
+              <h3 class="product-name">{{ prod.nombre }}</h3>
+              <p class="product-desc">{{ prod.descripcion }}</p>
+
+              <div class="product-price">${{ prod.precio }}</div>
+
+              <button
+                type="button"
+                class="cart-button"
+                [class.cart-button--disabled]="prod.stock === 0"
+                [disabled]="prod.stock === 0"
+              >
+                <span aria-hidden="true">&#128722;</span>
+                {{ prod.stock === 0 ? 'Agotado' : 'Agregar al Carrito' }}
+              </button>
+            </article>
+          }
+        </section>
+      }
+    </main>
   </section>
 }
