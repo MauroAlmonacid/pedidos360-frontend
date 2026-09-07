@@ -114,32 +114,41 @@ export class App implements OnInit {
   }
 
   // 5. Envía un nuevo pedido por HTTP POST a Spring Boot
-  agregarAlCarrito(prod: Producto): void {
-    const nuevoPedido: Pedido = {
-      nombre: prod.nombre,
-      precio: prod.precio,
-      cantidad: 1
-    };
-
-    this.carritoService.agregarAlCarrito(nuevoPedido).subscribe({
-      next: (pedidoCreado) => {
-        this.zone.run(() => {
-          this.itemsCarrito.push(pedidoCreado);
-          this.mensajeCarrito = `¡${prod.nombre} agregado al carrito!`;
-          // Muestra el panel lateral para dar retroalimentación visual al usuario
-          this.mostrarCarrito = true;
-          this.cdr.detectChanges();
-
-          // Borra el mensaje de confirmación después de 3 segundos
-          setTimeout(() => {
-            this.mensajeCarrito = null;
-            this.cdr.detectChanges();
-          }, 3000);
-        });
-      },
-      error: (err) => console.error('[Error al agregar pedido]:', err)
-    });
+agregarAlCarrito(prod: Producto): void {
+  // Escudo: si el producto no tiene existencias, no hacemos nada
+  if (prod.stock === 0) {
+    return;
   }
+
+  console.log('>>> Clic recibido en frontend para:', prod.nombre);
+
+  const nuevoPedido: Pedido = {
+    nombre: prod.nombre,
+    precio: prod.precio,
+    cantidad: 1
+  };
+
+  // El método .subscribe() activa el envío HTTP POST hacia http://localhost:8082/carrito
+  this.carritoService.agregarAlCarrito(nuevoPedido).subscribe({
+    next: (pedidoRegistrado) => {
+      console.log('>>> Éxito: Pedido guardado en Spring Boot:', pedidoRegistrado);
+
+      this.zone.run(() => {
+        // Agregamos el ítem recibido a la lista en pantalla
+        this.itemsCarrito.push(pedidoRegistrado);
+
+        // ABRIR EL PANEL LATERAL AUTOMÁTICAMENTE para que veas que el producto entró
+        this.mostrarCarrito = true;
+
+        // Forzamos a Angular a redibujar la vista en el acto
+        this.cdr.detectChanges();
+      });
+    },
+    error: (err) => {
+      console.error('>>> Error al enviar el producto al microservicio 8082:', err);
+    }
+  });
+}
 
   // 7. Abre o cierra el panel lateral deslizante del carrito
   alternarCarrito(): void {
