@@ -139,7 +139,7 @@ agregarAlCarrito(prod: Producto): void {
     cantidad: 1
   };
 
-  // El método .subscribe() activa el envío HTTP POST hacia http://localhost:8082/carrito
+  
   this.carritoService.agregarAlCarrito(nuevoPedido).subscribe({
     next: (pedidoRegistrado) => {
       console.log('>>> Éxito: Pedido guardado en Spring Boot:', pedidoRegistrado);

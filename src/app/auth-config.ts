@@ -1,4 +1,10 @@
-import { LogLevel, Configuration, InteractionType } from '@azure/msal-browser';
+import {
+  LogLevel,
+  Configuration,
+  InteractionType,
+  IPublicClientApplication,
+  AccountInfo
+} from '@azure/msal-browser';
 import { MsalInterceptorConfiguration } from '@azure/msal-angular';
 
 export const msalConfig: Configuration = {
@@ -32,10 +38,34 @@ export function MSALInterceptorConfigFactory(): MsalInterceptorConfiguration {
   const apiScope = 'api://b723576c-f14c-46b7-a4d6-bb1750acbed5/access_as_user';
 
   // Interceptores para AWS API Gateway
-  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/*', [apiScope]);
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com', [apiScope]);
 
   return {
     interactionType: InteractionType.Redirect,
     protectedResourceMap
+  };
+}
+
+// Datos limpios de la cuenta activa listos para viajar en las órdenes
+export interface DatosCuentaActiva {
+  nombre: string;
+  email: string;
+}
+
+// Devuelve la cuenta activa o, si aún no se declaró, la primera disponible en caché
+export function obtenerCuentaActiva(instance: IPublicClientApplication): AccountInfo | null {
+  return instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
+}
+
+// Extrae nombre y email de la cuenta logeada en MSAL de forma tolerante a nulos
+export function obtenerDatosCuentaActiva(instance: IPublicClientApplication): DatosCuentaActiva | null {
+  const cuenta = obtenerCuentaActiva(instance);
+  if (!cuenta) {
+    return null;
+  }
+
+  return {
+    nombre: cuenta.name || cuenta.username || 'Usuario Cliente',
+    email: cuenta.username || ''
   };
 }
