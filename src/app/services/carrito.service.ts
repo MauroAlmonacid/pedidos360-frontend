@@ -2,13 +2,14 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Pedido } from '../models/pedido';
+import { API_ENDPOINTS } from '../config/api.config';
 
 @Injectable({
   providedIn: 'root' // Permite inyectar este servicio en cualquier componente
 })
 export class CarritoService {
   // URL directa al microservicio de carrito en el puerto 8082
-  private apiUrl = 'https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/carrito'; 
+  private apiUrl = API_ENDPOINTS.carrito; 
 
   // Inyectamos HttpClient para comunicarnos por la red
   constructor(private http: HttpClient) {}

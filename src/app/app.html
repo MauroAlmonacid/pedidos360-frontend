@@ -106,6 +106,52 @@
       </div>
     </nav>
 
+    <!-- ===== Navegación entre secciones del portal ===== -->
+    <nav class="section-tabs" aria-label="Secciones del portal">
+      <button
+        type="button"
+        class="section-tab"
+        [class.section-tab--active]="seccionActiva === 'catalogo'"
+        (click)="cambiarSeccion('catalogo')"
+      >
+        <span aria-hidden="true">&#128717;</span> Catálogo
+      </button>
+      <button
+        type="button"
+        class="section-tab"
+        [class.section-tab--active]="seccionActiva === 'ordenes'"
+        (click)="cambiarSeccion('ordenes')"
+      >
+        <span aria-hidden="true">&#129534;</span> Órdenes
+        @if (ordenes.length > 0) {
+          <span class="tab-count">{{ ordenes.length }}</span>
+        }
+      </button>
+      <button
+        type="button"
+        class="section-tab"
+        [class.section-tab--active]="seccionActiva === 'despachos'"
+        (click)="cambiarSeccion('despachos')"
+      >
+        <span aria-hidden="true">&#128666;</span> Despachos
+        @if (despachos.length > 0) {
+          <span class="tab-count">{{ despachos.length }}</span>
+        }
+      </button>
+      <button
+        type="button"
+        class="section-tab"
+        [class.section-tab--active]="seccionActiva === 'notificaciones'"
+        (click)="cambiarSeccion('notificaciones')"
+      >
+        <span aria-hidden="true">&#128276;</span> Notificaciones
+        @if (notificaciones.length > 0) {
+          <span class="tab-count tab-count--alert">{{ notificaciones.length }}</span>
+        }
+      </button>
+    </nav>
+
+    @if (seccionActiva === 'catalogo') {
     <main class="welcome-main">
       <section class="welcome-card" aria-labelledby="welcome-title">
         <div class="shield" aria-hidden="true">
@@ -214,6 +260,280 @@
         </section>
       }
     </main>
+    }
+
+    <!-- ===== Sección de Órdenes ===== -->
+    @if (seccionActiva === 'ordenes') {
+      <main class="section-main">
+        <header class="section-header">
+          <div>
+            <span class="card-kicker">Historial de compras</span>
+            <h2>Mis Órdenes</h2>
+            <p class="section-subtitle">
+              Órdenes generadas por el microservicio de órdenes. El stock se descuenta
+              automáticamente a través de RabbitMQ.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="refresh-button"
+            (click)="cargarOrdenes()"
+            [disabled]="cargandoOrdenes"
+          >
+            <span class="refresh-icon" [class.spinning]="cargandoOrdenes" aria-hidden="true">&#8635;</span>
+            {{ cargandoOrdenes ? 'Actualizando…' : 'Actualizar' }}
+          </button>
+        </header>
+
+        @if (mensajeCheckout) {
+          <div class="checkout-feedback checkout-feedback--ok" role="status">
+            <span aria-hidden="true">&#10003;</span> {{ mensajeCheckout }}
+          </div>
+        }
+        @if (errorCheckout) {
+          <div class="checkout-feedback checkout-feedback--error" role="alert">
+            <span aria-hidden="true">!</span> {{ errorCheckout }}
+          </div>
+        }
+
+        @if (cargandoOrdenes && !errorOrdenes) {
+          <section class="catalog-loading" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <p>Cargando órdenes…</p>
+          </section>
+        } @else if (errorOrdenes) {
+          <section class="catalog-error" role="alert">
+            <span class="catalog-error__icon" aria-hidden="true">!</span>
+            <div class="catalog-error__body">
+              <strong>No se pudieron cargar las órdenes</strong>
+              <p>{{ errorOrdenes }}</p>
+            </div>
+            <button type="button" class="retry-button" (click)="cargarOrdenes()">Reintentar</button>
+          </section>
+        } @else if (ordenes.length === 0) {
+          <section class="catalog-empty" aria-live="polite">
+            <div class="empty-emoji" aria-hidden="true">&#129534;</div>
+            <h3>Aún no tienes órdenes</h3>
+            <p>Agrega productos al carrito y confirma tu compra para generar tu primera orden.</p>
+          </section>
+        } @else {
+          <section class="order-list" aria-label="Lista de órdenes">
+            @for (orden of ordenes; track orden.id) {
+              <article class="order-card">
+                <div class="order-card__top">
+                  <span class="badge">Orden #{{ orden.id }}</span>
+                  <span class="state-badge state-badge--{{ claseEstadoOrden(orden.estado) }}">
+                    {{ orden.estado }}
+                  </span>
+                </div>
+
+                <div class="order-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Cliente</span>
+                    <span class="meta-value">{{ orden.clienteEmail }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Fecha</span>
+                    <span class="meta-value">{{ orden.fechaCreacion | date: 'short' }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Total</span>
+                    <span class="meta-value meta-value--total">${{ orden.total }}</span>
+                  </div>
+                </div>
+
+                <ul class="order-items">
+                  @for (item of orden.items; track $index) {
+                    <li>
+                      <span>{{ item.cantidad }} × Producto #{{ item.idProducto }}</span>
+                      <span>${{ item.precioUnitario * item.cantidad }}</span>
+                    </li>
+                  }
+                </ul>
+
+                <div class="order-card__actions">
+                  <button
+                    type="button"
+                    class="mini-button"
+                    (click)="reenviarConfirmacion(orden)"
+                    [disabled]="enviandoReenvioId === orden.id"
+                  >
+                    &#9993;
+                    {{ enviandoReenvioId === orden.id ? 'Enviando…' : 'Reenviar confirmación' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="mini-button mini-button--ghost"
+                    (click)="verDespachoDeOrden(orden.id)"
+                  >
+                    &#128666; Ver despacho
+                  </button>
+                </div>
+              </article>
+            }
+          </section>
+        }
+      </main>
+    }
+
+    <!-- ===== Sección de Despachos ===== -->
+    @if (seccionActiva === 'despachos') {
+      <main class="section-main">
+        <header class="section-header">
+          <div>
+            <span class="card-kicker">Seguimiento en vivo</span>
+            <h2>Seguimiento de Despachos</h2>
+            <p class="section-subtitle">
+              Los despachos son creados de forma asíncrona por DespachoConsumer tras confirmar una orden.
+              Si no aparecen de inmediato, actualiza la lista.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="refresh-button"
+            (click)="cargarDespachos()"
+            [disabled]="cargandoDespachos"
+          >
+            <span class="refresh-icon" [class.spinning]="cargandoDespachos" aria-hidden="true">&#8635;</span>
+            {{ cargandoDespachos ? 'Actualizando…' : 'Actualizar' }}
+          </button>
+        </header>
+
+        @if (cargandoDespachos && !errorDespachos) {
+          <section class="catalog-loading" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <p>Cargando despachos…</p>
+          </section>
+        } @else if (errorDespachos) {
+          <section class="catalog-error" role="alert">
+            <span class="catalog-error__icon" aria-hidden="true">!</span>
+            <div class="catalog-error__body">
+              <strong>No se pudieron cargar los despachos</strong>
+              <p>{{ errorDespachos }}</p>
+            </div>
+            <button type="button" class="retry-button" (click)="cargarDespachos()">Reintentar</button>
+          </section>
+        } @else if (despachos.length === 0) {
+          <section class="catalog-empty" aria-live="polite">
+            <div class="empty-emoji" aria-hidden="true">&#128666;</div>
+            <h3>Sin despachos registrados</h3>
+            <p>Cuando confirmes una orden, aquí aparecerá la guía de envío generada automáticamente.</p>
+          </section>
+        } @else {
+          <section class="order-list" aria-label="Lista de despachos">
+            @for (despacho of despachos; track despacho.id) {
+              <article class="order-card">
+                <div class="order-card__top">
+                  <span class="badge">Guía {{ despacho.codigoSeguimiento }}</span>
+                  <span class="state-badge state-badge--{{ claseEstadoDespacho(despacho.estado) }}">
+                    {{ etiquetaEstadoDespacho(despacho.estado) }}
+                  </span>
+                </div>
+
+                <div class="order-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Orden</span>
+                    <span class="meta-value">#{{ despacho.idOrden }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Cliente</span>
+                    <span class="meta-value">{{ despacho.clienteEmail }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Creado</span>
+                    <span class="meta-value">{{ despacho.fechaCreacion | date: 'short' }}</span>
+                  </div>
+                </div>
+
+                <div class="order-card__actions">
+                  <label class="state-select">
+                    <span>Cambiar estado:</span>
+                    <select
+                      #selectorEstado
+                      [disabled]="actualizandoDespachoId === despacho.id"
+                      (change)="actualizarEstadoDespacho(despacho, selectorEstado.value)"
+                    >
+                      @for (estado of estadosDespacho; track estado) {
+                        <option [value]="estado" [selected]="estado === despacho.estado">
+                          {{ etiquetaEstadoDespacho(estado) }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+                  @if (actualizandoDespachoId === despacho.id) {
+                    <span class="inline-loading"><span class="mini-spinner" aria-hidden="true"></span> Guardando…</span>
+                  }
+                </div>
+              </article>
+            }
+          </section>
+        }
+      </main>
+    }
+
+    <!-- ===== Sección de Notificaciones ===== -->
+    @if (seccionActiva === 'notificaciones') {
+      <main class="section-main">
+        <header class="section-header">
+          <div>
+            <span class="card-kicker">Centro de mensajes</span>
+            <h2>Panel de Notificaciones</h2>
+            <p class="section-subtitle">
+              Al crear una orden, NotificacionConsumer envía el correo de confirmación de forma asíncrona.
+              Aquí puedes probar el envío directamente contra EmailController.
+            </p>
+          </div>
+        </header>
+
+        <section class="notify-form" aria-label="Probar envío de correo">
+          <h3>Probar envío de correo</h3>
+          <div class="form-row">
+            <label>
+              Destinatario
+              <input type="email" [(ngModel)]="correoPruebaTo" placeholder="usuario@correo.com" />
+            </label>
+            <label>
+              Asunto
+              <input type="text" [(ngModel)]="correoPruebaSubject" />
+            </label>
+          </div>
+          <label class="form-full">
+            Mensaje
+            <textarea rows="3" [(ngModel)]="correoPruebaBody"></textarea>
+          </label>
+          <button
+            type="button"
+            class="cart-action cart-action--primary notify-form__button"
+            (click)="enviarCorreoPrueba()"
+            [disabled]="enviandoPrueba"
+          >
+            &#9993; {{ enviandoPrueba ? 'Enviando…' : 'Enviar correo de prueba' }}
+          </button>
+        </section>
+
+        <section class="notify-list" aria-label="Bitácora de notificaciones">
+          <h3>Bitácora de eventos</h3>
+          @if (notificaciones.length === 0) {
+            <div class="notify-empty">Aún no hay eventos de notificación.</div>
+          } @else {
+            <ul>
+              @for (nota of notificaciones; track $index) {
+                <li class="notify-item notify-item--{{ nota.tipo }}">
+                  <span class="notify-item__icon" aria-hidden="true">
+                    {{ nota.tipo === 'exito' ? '✓' : (nota.tipo === 'error' ? '!' : 'i') }}
+                  </span>
+                  <div class="notify-item__body">
+                    <strong>{{ nota.titulo }}</strong>
+                    <p>{{ nota.detalle }}</p>
+                    <small>{{ nota.fecha | date: 'short' }}</small>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </main>
+    }
 
     <!-- ===== Panel lateral deslizante del carrito (Drawer) ===== -->
     <div
@@ -281,6 +601,12 @@
         @if (mensajeCarrito) {
           <div class="cart-feedback" role="status">{{ mensajeCarrito }}</div>
         }
+        @if (mensajeCheckout) {
+          <div class="cart-feedback" role="status">{{ mensajeCheckout }}</div>
+        }
+        @if (errorCheckout) {
+          <div class="cart-feedback cart-feedback--error" role="alert">{{ errorCheckout }}</div>
+        }
         <div class="cart-total">
           <span>Total a Pagar</span>
           <strong>${{ obtenerTotalCarrito() }}</strong>
@@ -297,9 +623,10 @@
           <button
             type="button"
             class="cart-action cart-action--primary"
-            (click)="vaciarTodoElCarrito()"
+            (click)="generarOrden()"
+            [disabled]="itemsCarrito.length === 0 || generandoOrden"
           >
-            &#10004; Finalizar Pedido
+            &#10004; {{ generandoOrden ? 'Procesando…' : 'Confirmar Compra / Generar Orden' }}
           </button>
         </div>
       </footer>
