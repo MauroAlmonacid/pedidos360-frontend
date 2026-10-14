@@ -1,0 +1,7 @@
+# Ignora la carpeta de librerías locales (se instalarán limpias dentro de Docker)
+node_modules
+# Ignora compilaciones previas
+dist
+# Ignora historial de git y configuraciones de editor
+.git
+.vscode
