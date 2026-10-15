@@ -6,5 +6,5 @@ export const API_ENDPOINTS = {
   carrito: `${API_GATEWAY_BASE}/carrito`,
   ordenes: `${API_GATEWAY_BASE}/ordenes`,
   despachos: `${API_GATEWAY_BASE}/despachos`,
-  email: `${API_GATEWAY_BASE}/api/email`,
+  email: `${API_GATEWAY_BASE}/notificaciones`,
 } as const;
