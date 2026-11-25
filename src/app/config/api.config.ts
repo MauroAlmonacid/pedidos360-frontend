@@ -7,4 +7,6 @@ export const API_ENDPOINTS = {
   ordenes: `${API_GATEWAY_BASE}/ordenes`,
   despachos: `${API_GATEWAY_BASE}/despachos`,
   email: `${API_GATEWAY_BASE}/notificaciones`,
+  pagos: `${API_GATEWAY_BASE}/pagos`,
+  recomendaciones: `${API_GATEWAY_BASE}/recomendaciones`,
 } as const;
