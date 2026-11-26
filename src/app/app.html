@@ -178,6 +178,59 @@
       </section>
     </main>
 
+    <!-- ===== Vitrina Top 5 Recomendaciones en Tiempo Real (Kafka) ===== -->
+    <main class="catalog-main">
+      <header class="catalog-header">
+        <div>
+          <span class="card-kicker">Motor de eventos Apache Kafka</span>
+          <h2>Top 5 Productos Recomendados</h2>
+          <p class="catalog-subtitle">
+            Ranking calculado en tiempo real según interacciones (Vista = +1 pt, Compra = +5 pts).
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+          <button type="button" class="mini-button" (click)="filtrarRecomendaciones('TODAS')">Todas</button>
+          <button type="button" class="mini-button mini-button--ghost" (click)="filtrarRecomendaciones('Tecnologia')">Tecnología</button>
+          <button type="button" class="mini-button mini-button--ghost" (click)="filtrarRecomendaciones('General')">General</button>
+          <button
+            type="button"
+            class="refresh-button"
+            (click)="cargarTopRecomendaciones()"
+            [disabled]="cargandoRecomendaciones"
+          >
+            <span class="refresh-icon" [class.spinning]="cargandoRecomendaciones" aria-hidden="true">&#8635;</span>
+            {{ cargandoRecomendaciones ? 'Actualizando…' : 'Refrescar Top' }}
+          </button>
+        </div>
+      </header>
+
+      @if (mensajeEvento) {
+        <div class="checkout-feedback checkout-feedback--ok" role="status">
+          <span aria-hidden="true">&#10003;</span> {{ mensajeEvento }}
+        </div>
+      }
+
+      @if (topRecomendaciones.length === 0) {
+        <p class="catalog-subtitle">Aún no hay interacciones registradas en Kafka. Haz clic en "Ver detalle (+1 pt)" en cualquier producto.</p>
+      } @else {
+        <section class="product-grid" aria-label="Top 5 recomendados">
+          @for (rec of topRecomendaciones; track rec.idProducto; let i = $index) {
+            <article class="product-card">
+              <div class="product-card__top">
+                <span class="badge">#{{ i + 1 }} Popular</span>
+                <span class="stock-label">
+                  <span class="stock-dot" aria-hidden="true"></span>
+                  {{ rec.puntaje }} pts ({{ rec.vistas }} vistas · {{ rec.compras }} compras)
+                </span>
+              </div>
+              <h3 class="product-name">{{ rec.nombreProducto }}</h3>
+              <p class="product-desc">Categoría: {{ rec.categoria }} · Código {{ rec.idProducto }}</p>
+            </article>
+          }
+        </section>
+      }
+    </main>
+
     <!-- ===== Catálogo de productos ===== -->
     <main class="catalog-main">
       <header class="catalog-header">
@@ -247,6 +300,15 @@
 
               <button
                 type="button"
+                class="mini-button mini-button--ghost"
+                style="margin-bottom: 0.5rem; width: 100%;"
+                (click)="registrarVistaProducto(prod)"
+              >
+                &#128065; Ver detalle (+1 pt Kafka)
+              </button>
+
+              <button
+                type="button"
                 class="cart-button"
                 [class.cart-button--disabled]="prod.stock === 0"
                 [disabled]="prod.stock === 0"
@@ -293,6 +355,22 @@
         @if (errorCheckout) {
           <div class="checkout-feedback checkout-feedback--error" role="alert">
             <span aria-hidden="true">!</span> {{ errorCheckout }}
+          </div>
+        }
+
+        @if (mensajePago) {
+          <div class="checkout-feedback checkout-feedback--ok" role="status">
+            <span aria-hidden="true">&#10003;</span> {{ mensajePago }}
+            @if (urlWebPayGenerada) {
+              <a [href]="urlWebPayGenerada" target="_blank" rel="noopener" style="margin-left: 0.5rem; font-weight: 700; text-decoration: underline;">
+                Abrir pasarela WebPay &#8599;
+              </a>
+            }
+          </div>
+        }
+        @if (errorPago) {
+          <div class="checkout-feedback checkout-feedback--error" role="alert">
+            <span aria-hidden="true">!</span> {{ errorPago }}
           </div>
         }
 
@@ -367,6 +445,15 @@
                     (click)="verDespachoDeOrden(orden.id)"
                   >
                     &#128666; Ver despacho
+                  </button>
+                  <button
+                    type="button"
+                    class="mini-button"
+                    (click)="pagarOrdenWebPay(orden)"
+                    [disabled]="procesandoPagoOrdenId === orden.id"
+                  >
+                    &#128179;
+                    {{ procesandoPagoOrdenId === orden.id ? 'Conectando WebPay…' : 'Pagar con WebPay' }}
                   </button>
                 </div>
               </article>

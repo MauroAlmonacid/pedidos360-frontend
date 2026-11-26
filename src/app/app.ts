@@ -19,6 +19,9 @@ import {
 import { DespachoService } from './services/despacho.service';
 import { RegistroNotificacion, TipoNotificacion } from './models/notificacion';
 import { NotificacionService } from './services/notificacion.service';
+import { PagoService } from './services/pago.service';
+import { RecomendacionProducto } from './models/recomendacion';
+import { RecomendacionService } from './services/recomendacion.service';
 
 type Seccion = 'catalogo' | 'ordenes' | 'despachos' | 'notificaciones';
 
@@ -70,6 +73,18 @@ export class App implements OnInit {
   correoPruebaBody: string = 'Este es un correo de prueba enviado desde el frontend de Pedidos360.';
   enviandoPrueba: boolean = false;
 
+  // ===== Recomendaciones en vivo (Kafka + H2) =====
+  topRecomendaciones: RecomendacionProducto[] = []; // Guarda el ranking Top 5
+  cargandoRecomendaciones: boolean = false;          // Muestra spinner al actualizar
+  categoriaFiltro: string = 'TODAS';                 // Categoría seleccionada en el filtro
+  mensajeEvento: string | null = null;               // Aviso breve al registrar VISTA (+1 pt)
+
+  // ===== Pagos WebPay + Alerta Antifraude (Kafka) =====
+  procesandoPagoOrdenId: number | null = null;       // ID de la orden que se está pagando
+  mensajePago: string | null = null;                 // Mensaje verde cuando Transbank da el token
+  errorPago: string | null = null;                   // Alerta roja si Kafka bloquea (HTTP 429)
+  urlWebPayGenerada: string | null = null;           // Enlace completo hacia WebPay Sandbox
+
   // Constantes expuestas al template para pintar selects y etiquetas
   readonly estadosDespacho = ESTADOS_DESPACHO;
   readonly etiquetasEstadoDespacho = ETIQUETAS_ESTADO_DESPACHO;
@@ -83,6 +98,8 @@ export class App implements OnInit {
     private ordenService: OrdenService,
     private despachoService: DespachoService,
     private notificacionService: NotificacionService,
+    private pagoService: PagoService,
+    private recomendacionService: RecomendacionService,
     private cdr: ChangeDetectorRef,
     private zone: NgZone
   ) {}
@@ -113,6 +130,7 @@ export class App implements OnInit {
 
           this.cargarCatalogo();
           this.cargarCarrito();
+          this.cargarTopRecomendaciones(); // Carga el Top 5 desde AWS al entrar al portal
           this.cdr.detectChanges();
         }
       });
@@ -287,7 +305,23 @@ export class App implements OnInit {
             'El correo de confirmación está siendo procesado de forma asíncrona por NotificacionConsumer.'
           );
 
-          // 2. Vaciamos el carrito local y en el backend
+          // Enviamos evento COMPRA (+5 pts) a Kafka por cada producto de la orden
+          for (const item of this.itemsCarrito) {
+            const idProd = this.resolverIdProducto(item);
+            const prodCatalogo = this.productos.find((p) => p.id === idProd);
+            this.recomendacionService.registrarEvento({
+              idCliente: this.correoUsuario || 'cliente-anonimo',
+              idProducto: `PROD-${idProd}`,
+              nombreProducto: item.nombre,
+              categoria: (prodCatalogo as { categoria?: string } | undefined)?.categoria || 'General',
+              tipoEvento: 'COMPRA'
+            }).subscribe({
+              error: (err) => console.warn('[Kafka] Error al registrar COMPRA:', err)
+            });
+          }
+          // Esperamos 1.2 segundos para que Kafka procese el puntaje y refrescamos el Top 5
+          setTimeout(() => this.cargarTopRecomendaciones(), 1200);
+
           this.itemsCarrito = [];
           this.mostrarCarrito = false;
           this.carritoService.vaciarCarrito().subscribe({
@@ -539,6 +573,110 @@ export class App implements OnInit {
           });
         }
       });
+  }
+
+  // ============================================================
+  // Recomendaciones en Tiempo Real (Kafka + H2)
+  // ============================================================
+  cargarTopRecomendaciones(): void {
+    this.cargandoRecomendaciones = true;
+    const peticion$ = this.categoriaFiltro === 'TODAS'
+      ? this.recomendacionService.obtenerTop5()
+      : this.recomendacionService.obtenerTopPorCategoria(this.categoriaFiltro);
+
+    peticion$.subscribe({
+      next: (lista) => {
+        this.zone.run(() => {
+          this.topRecomendaciones = lista ?? [];
+          this.cargandoRecomendaciones = false;
+          this.cdr.detectChanges();
+        });
+      },
+      error: (err) => {
+        this.zone.run(() => {
+          this.cargandoRecomendaciones = false;
+          console.error('[Recomendaciones] Error al cargar Top 5:', err);
+          this.cdr.detectChanges();
+        });
+      }
+    });
+  }
+
+  filtrarRecomendaciones(categoria: string): void {
+    this.categoriaFiltro = categoria;
+    this.cargarTopRecomendaciones();
+  }
+
+  // Dispara un evento VISTA (+1 pt) hacia Kafka al mirar un producto del catálogo
+  registrarVistaProducto(prod: Producto): void {
+    this.recomendacionService.registrarEvento({
+      idCliente: this.correoUsuario || 'cliente-anonimo',
+      idProducto: `PROD-${prod.id}`,
+      nombreProducto: prod.nombre,
+      categoria: (prod as { categoria?: string }).categoria || 'General',
+      tipoEvento: 'VISTA'
+    }).subscribe({
+      next: () => {
+        this.zone.run(() => {
+          this.mensajeEvento = `Vista registrada en Kafka (+1 pt): ${prod.nombre}`;
+          this.cdr.detectChanges();
+          setTimeout(() => {
+            this.mensajeEvento = null;
+            this.cdr.detectChanges();
+          }, 2500);
+          setTimeout(() => this.cargarTopRecomendaciones(), 1000);
+        });
+      },
+      error: (err) => console.error('[Recomendaciones] Error al enviar VISTA:', err)
+    });
+  }
+
+  // ============================================================
+  // Pagos WebPay + Detección Antifraude (Kafka)
+  // ============================================================
+  pagarOrdenWebPay(orden: Orden): void {
+    if (this.procesandoPagoOrdenId !== null) return;
+
+    this.mensajePago = null;
+    this.errorPago = null;
+    this.urlWebPayGenerada = null;
+    this.procesandoPagoOrdenId = orden.id;
+
+    this.pagoService.iniciarPago({
+      clientId: this.correoUsuario || orden.clienteEmail,
+      amount: orden.total,
+      transactionId: `ORD-${orden.id}`
+    }).subscribe({
+      next: (res) => {
+        this.zone.run(() => {
+          this.procesandoPagoOrdenId = null;
+          const urlFinal = res.url && res.token ? `${res.url}?token_ws=${res.token}` : (res.url || null);
+          this.urlWebPayGenerada = urlFinal;
+          this.mensajePago = `Token WebPay generado para la Orden #${orden.id}.`;
+          this.registrarNotificacion(
+            'exito',
+            `Pago WebPay iniciado (Orden #${orden.id})`,
+            'Transacción validada sin fraude en Kafka. Token Transbank emitido.'
+          );
+          if (urlFinal) {
+            window.open(urlFinal, '_blank'); // Abre Transbank en pestaña nueva sin cerrar tu sesión
+          }
+          this.cdr.detectChanges();
+        });
+      },
+      error: (err) => {
+        this.zone.run(() => {
+          this.procesandoPagoOrdenId = null;
+          if (err.status === 429) {
+            this.errorPago = 'Bloqueo Antifraude Kafka (HTTP 429): Superaste el límite de 3 intentos de pago en 10 segundos.';
+            this.registrarNotificacion('error', 'Alerta Antifraude Kafka (429)', this.errorPago);
+          } else {
+            this.errorPago = 'No se pudo iniciar el pago con WebPay. Revisa el estado de ms-pagos en AWS.';
+          }
+          this.cdr.detectChanges();
+        });
+      }
+    });
   }
 
   cerrarSesion(): void {
