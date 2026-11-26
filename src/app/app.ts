@@ -4,10 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { MsalService } from '@azure/msal-angular';
 import { Producto } from './models/producto';
 import { ProductoService } from './services/producto.service';
-// Modelo y servicio del carrito
 import { Pedido } from './models/pedido';
 import { CarritoService } from './services/carrito.service';
-// Integración: Órdenes, Despachos y Notificaciones
 import { CrearOrdenRequest, Orden, COLORES_ESTADO_ORDEN } from './models/orden';
 import { OrdenService } from './services/orden.service';
 import {
@@ -23,7 +21,8 @@ import { PagoService } from './services/pago.service';
 import { RecomendacionProducto } from './models/recomendacion';
 import { RecomendacionService } from './services/recomendacion.service';
 
-type Seccion = 'catalogo' | 'ordenes' | 'despachos' | 'notificaciones';
+type Seccion = 'catalogo' | 'populares' | 'ordenes' | 'administracion';
+type SubseccionAdmin = 'envios' | 'mensajes';
 
 @Component({
   selector: 'app-root',
@@ -43,15 +42,12 @@ export class App implements OnInit {
   cargandoProductos: boolean = false;
   errorProductos: string | null = null;
 
-  // Lista reactiva para almacenar los ítems del carrito
   itemsCarrito: Pedido[] = [];
-  mensajeCarrito: string | null = null;
   mostrarCarrito: boolean = false;
 
-  // Navegación entre secciones del portal
   seccionActiva: Seccion = 'catalogo';
+  subseccionAdmin: SubseccionAdmin = 'envios';
 
-  // ===== Órdenes =====
   ordenes: Orden[] = [];
   cargandoOrdenes: boolean = false;
   errorOrdenes: string | null = null;
@@ -59,33 +55,27 @@ export class App implements OnInit {
   mensajeCheckout: string | null = null;
   errorCheckout: string | null = null;
 
-  // ===== Despachos =====
   despachos: Despacho[] = [];
   cargandoDespachos: boolean = false;
   errorDespachos: string | null = null;
   actualizandoDespachoId: number | null = null;
 
-  // ===== Notificaciones =====
   notificaciones: RegistroNotificacion[] = [];
   enviandoReenvioId: number | null = null;
   correoPruebaTo: string = '';
-  correoPruebaSubject: string = 'Prueba de Notificaciones - Pedidos360';
-  correoPruebaBody: string = 'Este es un correo de prueba enviado desde el frontend de Pedidos360.';
+  correoPruebaSubject: string = 'Mensaje de prueba - Pedidos360';
+  correoPruebaBody: string = 'Este es un correo de prueba enviado desde la tienda Pedidos360.';
   enviandoPrueba: boolean = false;
 
-  // ===== Recomendaciones en vivo (Kafka + H2) =====
-  topRecomendaciones: RecomendacionProducto[] = []; // Guarda el ranking Top 5
-  cargandoRecomendaciones: boolean = false;          // Muestra spinner al actualizar
-  categoriaFiltro: string = 'TODAS';                 // Categoría seleccionada en el filtro
-  mensajeEvento: string | null = null;               // Aviso breve al registrar VISTA (+1 pt)
+  topRecomendaciones: RecomendacionProducto[] = [];
+  cargandoRecomendaciones: boolean = false;
+  categoriaFiltro: string = 'TODAS';
 
-  // ===== Pagos WebPay + Alerta Antifraude (Kafka) =====
-  procesandoPagoOrdenId: number | null = null;       // ID de la orden que se está pagando
-  mensajePago: string | null = null;                 // Mensaje verde cuando Transbank da el token
-  errorPago: string | null = null;                   // Alerta roja si Kafka bloquea (HTTP 429)
-  urlWebPayGenerada: string | null = null;           // Enlace completo hacia WebPay Sandbox
+  procesandoPagoOrdenId: number | null = null;
+  mensajePago: string | null = null;
+  errorPago: string | null = null;
+  urlWebPayGenerada: string | null = null;
 
-  // Constantes expuestas al template para pintar selects y etiquetas
   readonly estadosDespacho = ESTADOS_DESPACHO;
   readonly etiquetasEstadoDespacho = ETIQUETAS_ESTADO_DESPACHO;
   private readonly coloresEstadoOrden = COLORES_ESTADO_ORDEN;
@@ -126,11 +116,10 @@ export class App implements OnInit {
           this.usuarioActivo = cuentaParaActivar.name || cuentaParaActivar.username;
           this.correoUsuario = cuentaParaActivar.username || null;
           this.correoPruebaTo = this.correoUsuario || '';
-          console.log('>>> Cuenta activa registrada en MSAL:', cuentaParaActivar.username);
 
           this.cargarCatalogo();
           this.cargarCarrito();
-          this.cargarTopRecomendaciones(); // Carga el Top 5 desde AWS al entrar al portal
+          this.cargarTopRecomendaciones();
           this.cdr.detectChanges();
         }
       });
@@ -148,11 +137,52 @@ export class App implements OnInit {
     });
   }
 
+  cerrarSesion(): void {
+    this.authService.logoutRedirect();
+  }
+
   // ============================================================
-  // Catálogo / Carrito (lógica existente)
+  // Utilidades visuales
+  // ============================================================
+  formatoPrecio(valor: number | undefined | null): string {
+    const numero = Number(valor ?? 0);
+    const seguro = Number.isFinite(numero) ? numero : 0;
+    return `$ ${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(seguro)} CLP`;
+  }
+
+  obtenerInicial(texto: string | null | undefined): string {
+    const limpio = (texto || '').trim();
+    return limpio ? limpio.charAt(0).toUpperCase() : '?';
+  }
+
+  etiquetaEstadoOrden(estado: string): string {
+    const etiquetas: Record<string, string> = {
+      COMPLETADO: 'Completada',
+      PENDIENTE: 'Pendiente',
+      CANCELADO: 'Cancelada'
+    };
+    return etiquetas[estado] ?? estado;
+  }
+
+  nombreProducto(idProducto: number): string {
+    return this.productos.find((p) => p.id === idProducto)?.nombre ?? `Producto #${idProducto}`;
+  }
+
+  productoDeRecomendacion(rec: RecomendacionProducto): Producto | null {
+    const id = Number(String(rec.idProducto).replace(/^PROD-/i, ''));
+    if (Number.isFinite(id)) {
+      const porId = this.productos.find((p) => p.id === id);
+      if (porId) return porId;
+    }
+    return this.productos.find((p) => p.nombre === rec.nombreProducto) ?? null;
+  }
+
+  // ============================================================
+  // Catálogo y carrito
   // ============================================================
   cargarCatalogo(): void {
     this.cargandoProductos = true;
+    this.errorProductos = null;
     this.productoService.obtenerProductos().subscribe({
       next: (datos) => {
         this.zone.run(() => {
@@ -161,10 +191,10 @@ export class App implements OnInit {
           this.cdr.detectChanges();
         });
       },
-      error: (err) => {
+      error: () => {
         this.zone.run(() => {
           this.cargandoProductos = false;
-          this.errorProductos = 'No se pudo conectar con el microservicio en el puerto 8080.';
+          this.errorProductos = 'No pudimos cargar el catálogo. Vuelve a intentarlo en unos instantes.';
           this.cdr.detectChanges();
         });
       }
@@ -184,9 +214,7 @@ export class App implements OnInit {
   }
 
   agregarAlCarrito(prod: Producto): void {
-    if (prod.stock === 0) {
-      return;
-    }
+    if (prod.stock === 0) return;
 
     const nuevoPedido: Pedido = {
       idProducto: prod.id,
@@ -198,7 +226,6 @@ export class App implements OnInit {
     this.carritoService.agregarAlCarrito(nuevoPedido).subscribe({
       next: (pedidoRegistrado) => {
         this.zone.run(() => {
-          // Aseguramos conservar el idProducto aunque el backend no lo devuelva
           if (pedidoRegistrado.idProducto == null) {
             pedidoRegistrado.idProducto = prod.id;
           }
@@ -207,18 +234,10 @@ export class App implements OnInit {
           this.cdr.detectChanges();
         });
       },
-      error: (err) => {
-        console.error('>>> Error al enviar el producto al microservicio 8082:', err);
-      }
+      error: (err) => console.error('[Error al agregar al carrito]:', err)
     });
-  }
 
-  alternarCarrito(): void {
-    this.mostrarCarrito = !this.mostrarCarrito;
-  }
-
-  cerrarPanelCarrito(): void {
-    this.mostrarCarrito = false;
+    this.registrarEventoProducto(prod, 'VISTA');
   }
 
   vaciarTodoElCarrito(): void {
@@ -226,13 +245,7 @@ export class App implements OnInit {
       next: () => {
         this.zone.run(() => {
           this.itemsCarrito = [];
-          this.mensajeCarrito = 'Carrito vaciado';
           this.cdr.detectChanges();
-
-          setTimeout(() => {
-            this.mensajeCarrito = null;
-            this.cdr.detectChanges();
-          }, 3000);
         });
       },
       error: (err) => console.error('[Error al vaciar carrito]:', err)
@@ -244,43 +257,71 @@ export class App implements OnInit {
   }
 
   obtenerTotalCarrito(): number {
-    return this.itemsCarrito.reduce((acumulado, item) => acumulado + (item.precio * item.cantidad), 0);
+    return this.itemsCarrito.reduce((acumulado, item) => acumulado + item.precio * item.cantidad, 0);
+  }
+
+  alternarCarrito(): void {
+    this.mostrarCarrito = !this.mostrarCarrito;
+  }
+
+  cerrarPanelCarrito(): void {
+    this.mostrarCarrito = false;
   }
 
   // ============================================================
   // Navegación
   // ============================================================
-  cambiarSeccion(seccion: Seccion): void {
+  cambiarSeccion(seccion: Seccion | 'carrito'): void {
+    if (seccion === 'carrito') {
+      this.mostrarCarrito = true;
+      return;
+    }
+
     this.seccionActiva = seccion;
+    this.mostrarCarrito = false;
+
+    if (seccion === 'populares' && this.topRecomendaciones.length === 0) {
+      this.cargarTopRecomendaciones();
+    }
     if (seccion === 'ordenes' && this.ordenes.length === 0) {
       this.cargarOrdenes();
     }
-    if (seccion === 'despachos' && this.despachos.length === 0) {
+    if (seccion === 'administracion' && this.subseccionAdmin === 'envios' && this.despachos.length === 0) {
+      this.cargarDespachos();
+    }
+
+    this.cdr.detectChanges();
+  }
+
+  cambiarSubseccionAdmin(subseccion: SubseccionAdmin): void {
+    this.subseccionAdmin = subseccion;
+    if (subseccion === 'envios' && this.despachos.length === 0) {
       this.cargarDespachos();
     }
     this.cdr.detectChanges();
   }
 
   // ============================================================
-  // Flujo de Checkout: Carrito -> Órdenes
+  // Checkout: crear orden y abrir WebPay de inmediato
   // ============================================================
   generarOrden(): void {
     if (this.generandoOrden) return;
 
     this.mensajeCheckout = null;
     this.errorCheckout = null;
+    this.mensajePago = null;
+    this.errorPago = null;
 
     if (this.itemsCarrito.length === 0) {
-      this.errorCheckout = 'Tu carrito está vacío. Agrega productos antes de confirmar la compra.';
+      this.errorCheckout = 'Tu carrito está vacío. Agrega productos antes de continuar.';
       return;
     }
 
     if (!this.correoUsuario) {
-      this.errorCheckout = 'No se pudo obtener tu correo electrónico de la sesión.';
+      this.errorCheckout = 'No pudimos obtener tu correo. Inicia sesión nuevamente para continuar.';
       return;
     }
 
-    // 1. Transformamos los ítems del carrito (Pedido) al formato CrearOrdenRequest
     const request: CrearOrdenRequest = {
       clienteEmail: this.correoUsuario,
       items: this.itemsCarrito.map((item) => ({
@@ -291,57 +332,55 @@ export class App implements OnInit {
     };
 
     this.generandoOrden = true;
+    const ventanaPago = this.abrirVentanaPago();
 
     this.ordenService.crearOrden(request).subscribe({
       next: (orden) => {
         this.zone.run(() => {
           this.generandoOrden = false;
           this.ordenes = [orden, ...this.ordenes];
-          this.mensajeCheckout =
-            `Orden #${orden.id} generada con éxito. Enviamos el detalle de confirmación a ${orden.clienteEmail}.`;
+          this.mensajeCheckout = '¡Compra confirmada! Te enviamos el detalle a tu correo.';
           this.registrarNotificacion(
             'info',
-            `Orden #${orden.id} creada`,
-            'El correo de confirmación está siendo procesado de forma asíncrona por NotificacionConsumer.'
+            'Compra confirmada',
+            'Te enviamos el detalle de tu compra a tu correo.'
           );
 
-          // Enviamos evento COMPRA (+5 pts) a Kafka por cada producto de la orden
           for (const item of this.itemsCarrito) {
-            const idProd = this.resolverIdProducto(item);
-            const prodCatalogo = this.productos.find((p) => p.id === idProd);
-            this.recomendacionService.registrarEvento({
-              idCliente: this.correoUsuario || 'cliente-anonimo',
-              idProducto: `PROD-${idProd}`,
-              nombreProducto: item.nombre,
-              categoria: (prodCatalogo as { categoria?: string } | undefined)?.categoria || 'General',
-              tipoEvento: 'COMPRA'
-            }).subscribe({
-              error: (err) => console.warn('[Kafka] Error al registrar COMPRA:', err)
-            });
+            const idProducto = this.resolverIdProducto(item);
+            const prodCatalogo = this.productos.find((p) => p.id === idProducto);
+            this.registrarEventoProducto(
+              prodCatalogo ?? {
+                id: idProducto,
+                nombre: item.nombre,
+                descripcion: '',
+                categoria: 'General',
+                precio: item.precio,
+                stock: 0
+              },
+              'COMPRA'
+            );
           }
-          // Esperamos 1.2 segundos para que Kafka procese el puntaje y refrescamos el Top 5
           setTimeout(() => this.cargarTopRecomendaciones(), 1200);
 
           this.itemsCarrito = [];
-          this.mostrarCarrito = false;
           this.carritoService.vaciarCarrito().subscribe({
-            error: (err) => console.error('[Checkout] No se pudo vaciar el carrito en el backend:', err)
+            error: (err) => console.error('[Checkout] No se pudo vaciar el carrito:', err)
           });
 
-          // 3. Recargamos el catálogo para reflejar el descuento de stock (ProductoConsumer)
           this.cargarCatalogo();
-
-          // 4. Refrescamos despachos y esperamos la creación asíncrona (DespachoConsumer)
           this.cargarDespachos();
           this.esperarDespachoDeOrden(orden.id, 6);
 
+          this.iniciarPagoWebPay(orden, ventanaPago);
           this.cdr.detectChanges();
         });
       },
       error: (err) => {
         this.zone.run(() => {
           this.generandoOrden = false;
-          this.errorCheckout = 'No se pudo generar la orden. Verifica el microservicio de órdenes (puerto 8083).';
+          this.cerrarVentanaPago(ventanaPago);
+          this.errorCheckout = 'No pudimos confirmar tu compra. Inténtalo nuevamente en unos minutos.';
           console.error('[Checkout] Error al crear la orden:', err);
           this.cdr.detectChanges();
         });
@@ -349,17 +388,22 @@ export class App implements OnInit {
     });
   }
 
-  // Resuelve el idProducto del ítem: prioriza el id guardado y, si no,
-  // lo busca en el catálogo por nombre.
   private resolverIdProducto(item: Pedido): number {
-    if (item.idProducto != null) {
-      return item.idProducto;
-    }
+    if (item.idProducto != null) return item.idProducto;
     const encontrado = this.productos.find((p) => p.nombre === item.nombre);
-    if (encontrado) {
-      return encontrado.id;
-    }
-    return item.id ?? 0;
+    return encontrado ? encontrado.id : item.id ?? 0;
+  }
+
+  private registrarEventoProducto(prod: Producto, tipo: 'VISTA' | 'COMPRA'): void {
+    this.recomendacionService.registrarEvento({
+      idCliente: this.correoUsuario || 'cliente',
+      idProducto: `PROD-${prod.id}`,
+      nombreProducto: prod.nombre,
+      categoria: prod.categoria || 'General',
+      tipoEvento: tipo
+    }).subscribe({
+      error: (err) => console.warn('[Recomendaciones] No se pudo registrar la interacción:', err)
+    });
   }
 
   // ============================================================
@@ -379,7 +423,7 @@ export class App implements OnInit {
       error: (err) => {
         this.zone.run(() => {
           this.cargandoOrdenes = false;
-          this.errorOrdenes = 'No se pudo conectar con el microservicio de órdenes en el puerto 8083.';
+          this.errorOrdenes = 'No pudimos cargar tus órdenes. Vuelve a intentarlo en unos instantes.';
           console.error('[Órdenes] Error al listar órdenes:', err);
           this.cdr.detectChanges();
         });
@@ -392,7 +436,7 @@ export class App implements OnInit {
   }
 
   // ============================================================
-  // Despachos
+  // Envíos
   // ============================================================
   cargarDespachos(): void {
     this.cargandoDespachos = true;
@@ -408,15 +452,14 @@ export class App implements OnInit {
       error: (err) => {
         this.zone.run(() => {
           this.cargandoDespachos = false;
-          this.errorDespachos = 'No se pudo conectar con el microservicio de despachos en el puerto 8084.';
-          console.error('[Despachos] Error al listar despachos:', err);
+          this.errorDespachos = 'No pudimos cargar el estado de tus envíos. Vuelve a intentarlo en unos instantes.';
+          console.error('[Despachos] Error al listar envíos:', err);
           this.cdr.detectChanges();
         });
       }
     });
   }
 
-  // Espera con reintentos la creación asíncrona del despacho tras crear la orden
   private esperarDespachoDeOrden(idOrden: number, intentosRestantes: number): void {
     this.despachoService.consultarPorOrden(idOrden).subscribe({
       next: (despacho) => {
@@ -424,14 +467,13 @@ export class App implements OnInit {
           this.mezclarDespacho(despacho);
           this.registrarNotificacion(
             'exito',
-            `Despacho ${despacho.codigoSeguimiento}`,
-            `Guía de envío generada automáticamente para la orden #${idOrden}.`
+            'Envío preparado',
+            'Ya puedes revisar el estado de tu entrega en Seguimiento de envíos.'
           );
           this.cdr.detectChanges();
         });
       },
       error: () => {
-        // El consumidor aún no ha creado el registro (latencia asíncrona)
         if (intentosRestantes > 0) {
           setTimeout(() => this.esperarDespachoDeOrden(idOrden, intentosRestantes - 1), 2000);
         }
@@ -460,8 +502,8 @@ export class App implements OnInit {
           this.actualizandoDespachoId = null;
           this.registrarNotificacion(
             'info',
-            `Despacho ${actualizado.codigoSeguimiento}`,
-            `Estado actualizado a ${this.etiquetaEstadoDespacho(actualizado.estado)}.`
+            'Estado del envío actualizado',
+            `Ahora está ${this.etiquetaEstadoDespacho(actualizado.estado).toLowerCase()}.`
           );
           this.cdr.detectChanges();
         });
@@ -477,7 +519,8 @@ export class App implements OnInit {
   }
 
   verDespachoDeOrden(idOrden: number): void {
-    this.seccionActiva = 'despachos';
+    this.seccionActiva = 'administracion';
+    this.subseccionAdmin = 'envios';
     this.cargarDespachos();
   }
 
@@ -489,12 +532,8 @@ export class App implements OnInit {
     return this.coloresEstadoDespacho[estado] ?? 'info';
   }
 
-  obtenerDespachoDeOrden(idOrden: number): Despacho | undefined {
-    return this.despachos.find((d) => d.idOrden === idOrden);
-  }
-
   // ============================================================
-  // Notificaciones
+  // Mensajes
   // ============================================================
   registrarNotificacion(tipo: TipoNotificacion, titulo: string, detalle: string): void {
     this.notificaciones = [{ tipo, titulo, detalle, fecha: new Date() }, ...this.notificaciones];
@@ -503,36 +542,30 @@ export class App implements OnInit {
     }
   }
 
-  // Reenvía manualmente el correo de confirmación de una orden usando EmailController
   reenviarConfirmacion(orden: Orden): void {
     if (this.enviandoReenvioId !== null) return;
 
-    const asunto = `Confirmación de Compra - Pedido #${orden.id}`;
+    const asunto = `Confirmación de compra - Pedido #${orden.id}`;
     const cuerpo =
-      `¡Hola!\n\nReenviamos la confirmación de tu orden.\n` +
-      `- N° de Orden: ${orden.id}\n` +
-      `- Total pagado: $${orden.total}\n` +
-      `- Estado: ${orden.estado}\n\n` +
+      `¡Hola!\n\nAquí tienes el detalle de tu compra.\n` +
+      `- N° de orden: ${orden.id}\n` +
+      `- Total: ${this.formatoPrecio(orden.total)}\n` +
+      `- Estado: ${this.etiquetaEstadoOrden(orden.estado)}\n\n` +
       `¡Gracias por comprar en Pedidos360!`;
 
     this.enviandoReenvioId = orden.id;
     this.notificacionService.enviarCorreo(orden.clienteEmail, asunto, cuerpo).subscribe({
-      next: (respuesta) => {
+      next: () => {
         this.zone.run(() => {
           this.enviandoReenvioId = null;
-          this.registrarNotificacion('exito', `Correo reenviado`, `Orden #${orden.id} → ${orden.clienteEmail}`);
-          console.log('[Notificaciones] Respuesta:', respuesta);
+          this.registrarNotificacion('exito', 'Correo enviado', `Reenviamos el detalle a ${orden.clienteEmail}.`);
           this.cdr.detectChanges();
         });
       },
       error: (err) => {
         this.zone.run(() => {
           this.enviandoReenvioId = null;
-          this.registrarNotificacion(
-            'error',
-            'No se pudo enviar el correo',
-            'Verifica el microservicio de notificaciones (puerto 8085) y su configuración SMTP.'
-          );
+          this.registrarNotificacion('error', 'No pudimos enviar el correo', 'Vuelve a intentarlo más tarde.');
           console.error('[Notificaciones] Error al reenviar:', err);
           this.cdr.detectChanges();
         });
@@ -540,11 +573,10 @@ export class App implements OnInit {
     });
   }
 
-  // Prueba directa del endpoint EmailController.java desde el panel
   enviarCorreoPrueba(): void {
     if (this.enviandoPrueba) return;
     if (!this.correoPruebaTo) {
-      this.registrarNotificacion('error', 'Falta destinatario', 'Ingresa un correo de destino para la prueba.');
+      this.registrarNotificacion('error', 'Falta el destinatario', 'Ingresa un correo para continuar.');
       return;
     }
 
@@ -552,11 +584,10 @@ export class App implements OnInit {
     this.notificacionService
       .enviarCorreo(this.correoPruebaTo, this.correoPruebaSubject, this.correoPruebaBody)
       .subscribe({
-        next: (respuesta) => {
+        next: () => {
           this.zone.run(() => {
             this.enviandoPrueba = false;
-            this.registrarNotificacion('exito', 'Correo de prueba enviado', `Destino: ${this.correoPruebaTo}`);
-            console.log('[Notificaciones] Respuesta prueba:', respuesta);
+            this.registrarNotificacion('exito', 'Correo enviado', `Mensaje enviado a ${this.correoPruebaTo}.`);
             this.cdr.detectChanges();
           });
         },
@@ -565,10 +596,10 @@ export class App implements OnInit {
             this.enviandoPrueba = false;
             this.registrarNotificacion(
               'error',
-              'Error al enviar correo de prueba',
-              'Verifica el microservicio de notificaciones (puerto 8085) y su configuración SMTP.'
+              'No pudimos enviar el correo',
+              'Revisa los datos e inténtalo nuevamente.'
             );
-            console.error('[Notificaciones] Error en prueba:', err);
+            console.error('[Notificaciones] Error en el envío:', err);
             this.cdr.detectChanges();
           });
         }
@@ -576,13 +607,14 @@ export class App implements OnInit {
   }
 
   // ============================================================
-  // Recomendaciones en Tiempo Real (Kafka + H2)
+  // Productos más populares
   // ============================================================
   cargarTopRecomendaciones(): void {
     this.cargandoRecomendaciones = true;
-    const peticion$ = this.categoriaFiltro === 'TODAS'
-      ? this.recomendacionService.obtenerTop5()
-      : this.recomendacionService.obtenerTopPorCategoria(this.categoriaFiltro);
+    const peticion$ =
+      this.categoriaFiltro === 'TODAS'
+        ? this.recomendacionService.obtenerTop5()
+        : this.recomendacionService.obtenerTopPorCategoria(this.categoriaFiltro);
 
     peticion$.subscribe({
       next: (lista) => {
@@ -595,7 +627,7 @@ export class App implements OnInit {
       error: (err) => {
         this.zone.run(() => {
           this.cargandoRecomendaciones = false;
-          console.error('[Recomendaciones] Error al cargar Top 5:', err);
+          console.error('[Recomendaciones] Error al cargar los favoritos:', err);
           this.cdr.detectChanges();
         });
       }
@@ -607,34 +639,29 @@ export class App implements OnInit {
     this.cargarTopRecomendaciones();
   }
 
-  // Dispara un evento VISTA (+1 pt) hacia Kafka al mirar un producto del catálogo
-  registrarVistaProducto(prod: Producto): void {
-    this.recomendacionService.registrarEvento({
-      idCliente: this.correoUsuario || 'cliente-anonimo',
-      idProducto: `PROD-${prod.id}`,
-      nombreProducto: prod.nombre,
-      categoria: (prod as { categoria?: string }).categoria || 'General',
-      tipoEvento: 'VISTA'
-    }).subscribe({
-      next: () => {
-        this.zone.run(() => {
-          this.mensajeEvento = `Vista registrada en Kafka (+1 pt): ${prod.nombre}`;
-          this.cdr.detectChanges();
-          setTimeout(() => {
-            this.mensajeEvento = null;
-            this.cdr.detectChanges();
-          }, 2500);
-          setTimeout(() => this.cargarTopRecomendaciones(), 1000);
-        });
-      },
-      error: (err) => console.error('[Recomendaciones] Error al enviar VISTA:', err)
-    });
-  }
-
   // ============================================================
-  // Pagos WebPay + Detección Antifraude (Kafka)
+  // WebPay
   // ============================================================
   pagarOrdenWebPay(orden: Orden): void {
+    const ventanaPago = this.abrirVentanaPago();
+    this.iniciarPagoWebPay(orden, ventanaPago);
+  }
+
+  private abrirVentanaPago(): Window | null {
+    try {
+      return window.open('', '_blank');
+    } catch {
+      return null;
+    }
+  }
+
+  private cerrarVentanaPago(ventana: Window | null): void {
+    if (ventana && !ventana.closed) {
+      ventana.close();
+    }
+  }
+
+  private iniciarPagoWebPay(orden: Orden, ventanaPago: Window | null): void {
     if (this.procesandoPagoOrdenId !== null) return;
 
     this.mensajePago = null;
@@ -650,16 +677,24 @@ export class App implements OnInit {
       next: (res) => {
         this.zone.run(() => {
           this.procesandoPagoOrdenId = null;
-          const urlFinal = res.url && res.token ? `${res.url}?token_ws=${res.token}` : (res.url || null);
+          const urlFinal = res.url && res.token ? `${res.url}?token_ws=${res.token}` : res.url || null;
           this.urlWebPayGenerada = urlFinal;
-          this.mensajePago = `Token WebPay generado para la Orden #${orden.id}.`;
+          this.mensajePago = 'Tu pago está listo. Completa el proceso en WebPay para finalizar tu compra.';
           this.registrarNotificacion(
             'exito',
-            `Pago WebPay iniciado (Orden #${orden.id})`,
-            'Transacción validada sin fraude en Kafka. Token Transbank emitido.'
+            'Pago iniciado',
+            'Completa el proceso en WebPay para finalizar tu compra.'
           );
+
           if (urlFinal) {
-            window.open(urlFinal, '_blank'); // Abre Transbank en pestaña nueva sin cerrar tu sesión
+            if (ventanaPago && !ventanaPago.closed) {
+              ventanaPago.location.href = urlFinal;
+              ventanaPago.focus();
+            } else {
+              window.open(urlFinal, '_blank');
+            }
+          } else {
+            this.cerrarVentanaPago(ventanaPago);
           }
           this.cdr.detectChanges();
         });
@@ -667,19 +702,16 @@ export class App implements OnInit {
       error: (err) => {
         this.zone.run(() => {
           this.procesandoPagoOrdenId = null;
+          this.cerrarVentanaPago(ventanaPago);
           if (err.status === 429) {
-            this.errorPago = 'Bloqueo Antifraude Kafka (HTTP 429): Superaste el límite de 3 intentos de pago en 10 segundos.';
-            this.registrarNotificacion('error', 'Alerta Antifraude Kafka (429)', this.errorPago);
+            this.errorPago = 'Demasiados intentos en poco tiempo. Espera un momento y vuelve a intentarlo.';
           } else {
-            this.errorPago = 'No se pudo iniciar el pago con WebPay. Revisa el estado de ms-pagos en AWS.';
+            this.errorPago = 'No pudimos iniciar el pago. Inténtalo nuevamente.';
           }
+          this.registrarNotificacion('error', 'No pudimos iniciar el pago', this.errorPago);
           this.cdr.detectChanges();
         });
       }
     });
-  }
-
-  cerrarSesion(): void {
-    this.authService.logoutRedirect();
   }
 }
