@@ -38,7 +38,7 @@ export function MSALInterceptorConfigFactory(): MsalInterceptorConfiguration {
   const apiScope = 'api://b723576c-f14c-46b7-a4d6-bb1750acbed5/access_as_user';
 
   // Interceptores para AWS API Gateway
-  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com', [apiScope]);
+  protectedResourceMap.set('https://c9dnj0qg84.execute-api.us-east-1.amazonaws.com/*', [apiScope]);
 
   return {
     interactionType: InteractionType.Redirect,
